@@ -1,0 +1,90 @@
+Ground truth: based on the analytic energy loss formalism of berezinsky _
+Reconstructed: based on the analytic energy loss formalism of berezinsky _
+
+Ground truth: last , we show that this vacuum squeezing can be interpreted as _ polarization squeezing_.
+Reconstructed: last, we show that this vacuum squeezing can be interpreted as _ polarization squeezing_.
+
+Ground truth: we find that the circular polarization can not be detected for an isotropic background .
+Reconstructed: we find that the circular polarization cannot be detected for an isotropic background .
+
+Ground truth: for example , repeated computations due to accumulated data are computationally prohibitive .
+Reconstructed: for example , repeated calculations due to accumulated data are computationally prohibitive .
+
+Ground truth: we show that this operation is compatible with the mutation operation on the tilting objects .
+Reconstructed: we show that this operation is compatible with the mutation operation on the tilting objects .
+
+Ground truth: the measurements were performed with the wasa detector setup at cosy .
+Reconstructed: the measurements were done with the wasa detector setup at cosy .
+
+Ground truth: tarasov * +   ii .
+Reconstructed: tarasov * + ii .
+
+Ground truth: =     =    =     =
+Reconstructed: = = = = =
+
+Ground truth: we describe a new paradox for ideal fluids .
+Reconstructed: we describe a new paradox for ideal fluids .
+
+Ground truth: we have tested a mirror that we believe meets our criterion , the alpao dm52 mirror .
+Reconstructed: we have tested a mirror that we believe meets our criterion , the alpao dm52 mirror .
+
+Ground truth: this arrangement is referred to as a woofer - tweeter system .
+Reconstructed: this arrangement is referred to as a woofer-tweeter system .
+
+Ground truth: in other words , the helical world chain describes the particle rotation with superluminal velocity .
+Reconstructed: In other words , the helicular world chain describes the spin of particles with superluminal speed .
+
+Ground truth: typically , algorithms for dimensionality reduction are computationally expensive .
+Reconstructed: typically , algorithms for dimensional reduction are computationally expensive .
+
+Ground truth: this is similar for two v systems .
+Reconstructed: this is similar for two v systems .
+
+Ground truth: envelope solitary waves that appear in fiber and waveguide nonlinear optics .
+Reconstructed: envelope lone waves that appear in fiber and wave-guide nonlinear optics .
+
+Ground truth: this provides the strongest constraint yet that the substellar imf turns over ( @xmath0 , @xmath1 ) .
+Reconstructed: this provides the strongest constraint so far that the substellar imf turns over ( @xmath0 , @xmath1).
+
+Ground truth: we discuss several novel types of multi - component ( temporal and spatial )
+Reconstructed: we discuss several new types of multi-component (temporal and spatial)
+
+Ground truth: the luminosity function of ngc 2477 may flatten at @xmath0 @xmath3 9.5 .
+Reconstructed: the luminance function of ngc 2477 may flatten at @ xmath0 @ xmath3 9.5 .
+
+Ground truth: we also show how to separate polarized gravitational waves from unpolarized gravitational waves .
+Reconstructed: we also show how to separate polarized gravitational waves from unpolarized gravitational waves .
+
+Ground truth: # 1_#1 _ =    # 1 1.25 in .125 in .25 in
+Reconstructed: # 1_# 1 _ # = 1.25 in .125 in .25 in .25
+
+Ground truth: new methods for obtaining functional equations for feynman integrals are presented .
+Reconstructed: new methods for obtaining functional equations for feynman integrals are presented.
+
+Ground truth: for both cases   we give the exact rate function .
+Reconstructed: for both cases we give the exact rate function .
+
+Ground truth: we calculate generalized overlap reduction functions for the circularly polarized stochastic gravitational wave background .
+Reconstructed: we calculate generalized overlap reduction functions for the circularly polarized stochastic gravity wave background .
+
+Ground truth: electroweak corrections to longitudinal gauge and higgs boson scattering amplitudes are calculated .
+Reconstructed: Electro-weak corrections to the longitudinal gauge and amplitude distributions of the Higgs boson are calculated .
+
+Ground truth: in the inner disks of both galaxies ,   the x - factor is about @xmath8 .
+Reconstructed: In the inner disks of both galaxies , the x-factor is about @ xmath8 .
+
+Ground truth: we also confirm the previous unpolarized data obtained under complementary kinematic conditions .
+Reconstructed: we also confirm the previous unpolarised data obtained under complementary kinematic conditions .
+
+Ground truth: of physics , boston university , + 590 commonwealth ave .
+Reconstructed: of physics , Boston University , + 590 Commonwealth Ave .
+
+Ground truth: 3em elizabeth h. simmons & yumian su 2em _ dept .
+Reconstructed: 3em elizabeth h simmons & yumian su u . _ 3em _ department .
+
+Ground truth: ,   boston , ma 02215 _
+Reconstructed: , boston , ma 02215 _
+
+Ground truth: this approximation can only be valid if applied to fluctuations that involve a sufficiently large number of molecules .
+Reconstructed: this approximation can only be valid if applied to fluctuations that involve a sufficiently large number of molecules .
+

@@ -1,0 +1,90 @@
+Ground truth: On the way home, Sally held the rock tight.
+Reconstructed: On the way home, Sally held the rock tightly.
+
+Ground truth: "A big egg!"
+Reconstructed: "A large egg!"
+
+Ground truth: He wants to stay at home and rest.
+Reconstructed: He wants to stay at home and rest.
+
+Ground truth: The tree had fallen on the tracks!
+Reconstructed: The tree had fallen on the tracks!
+
+Ground truth: Once upon a time, there was a selfish cat.
+Reconstructed: Once upon a time, there was an selfish cat.
+
+Ground truth: They both laughed and went back to the park.
+Reconstructed: They both laughed and went back to the park.
+
+Ground truth: <|endoftext|>
+Reconstructed: < kdendoftext kdendofte>
+
+Ground truth: She signs, "No, you can't see the gas.
+Reconstructed: She signs, "No, you can't see the gas.
+
+Ground truth: <|endoftext|>
+Reconstructed: < kdendoftext kdendofte>
+
+Ground truth: Lila said.
+Reconstructed: Lila said.
+
+Ground truth: Mom said.
+Reconstructed: Mom said.
+
+Ground truth: She went home sad, without her bright spark.
+Reconstructed: She went home sad, without her bright spark.
+
+Ground truth: Ben shouted.
+Reconstructed: Ben yelled.
+
+Ground truth: Can you pay me?"
+Reconstructed: Can you pay me?"
+
+Ground truth: The butterfly was sad but it didn't give up.
+Reconstructed: The butterfly was sad but it didn't give up.
+
+Ground truth: But we have each other, and we have fun.
+Reconstructed: But we have each other, and we have fun.
+
+Ground truth: The glow was coming from a big, shiny rock.
+Reconstructed: The glow was coming from a big, shiny rock.
+
+Ground truth: It will be easy if we all work together."
+Reconstructed: It will be easy if we all work together".
+
+Ground truth: It was a rough game, but they liked it.
+Reconstructed: It was a tough game, but they liked it.
+
+Ground truth: <|endoftext|>
+Reconstructed: < kdendoftext kdendofte>
+
+Ground truth: The blocks collapsed and scattered everywhere.
+Reconstructed: The blocks collapsed and scattered everywhere.
+
+Ground truth: <|endoftext|>
+Reconstructed: < kdendoftext kdendofte>
+
+Ground truth: Tom says, "But mom, I will miss school.
+Reconstructed: Tom says, "But mom, I'll miss school.
+
+Ground truth: The dog spoke!
+Reconstructed: The dog spoke!
+
+Ground truth: He saw a big dog named Max.
+Reconstructed: He saw a big dog named Max.
+
+Ground truth: They turned on the light.
+Reconstructed: They turned on the light.
+
+Ground truth: But Sara does not hear her.
+Reconstructed: But Sara doesn't hear her.
+
+Ground truth: Tim pressed the button and the car disappeared.
+Reconstructed: Tim pressed the button and the car disappeared.
+
+Ground truth: It was a small red car.
+Reconstructed: It was a small red car.
+
+Ground truth: They both smiled and said, "Bye!"
+Reconstructed: They both smiled and said, "Bye!"
+

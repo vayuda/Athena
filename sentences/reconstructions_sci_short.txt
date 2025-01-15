@@ -1,0 +1,90 @@
+Ground truth: may represent a later stage of irdc evolution .
+Reconstructed: may represent a later stage of irdc evolution .
+
+Ground truth: # 1_#1 _
+Reconstructed: # 1_ # 1 _
+
+Ground truth: v-
+Reconstructed: v-
+
+Ground truth: 
+Reconstructed: 2
+
+Ground truth: we address two important questions .
+Reconstructed: ... we answer two important questions .
+
+Ground truth: +
+Reconstructed: +
+
+Ground truth: +
+Reconstructed: +
+
+Ground truth: .
+Reconstructed: .
+
+Ground truth: [ section ]
+Reconstructed: [ section ]
+
+Ground truth: et al .
+Reconstructed: et al .
+
+Ground truth: # 1
+Reconstructed: # 1
+
+Ground truth: [ firstpage ]
+Reconstructed: [ first page ]
+
+Ground truth: *
+Reconstructed: *
+
+Ground truth: 210 + universit paris
+Reconstructed: 210 + universit paris
+
+Ground truth: 2
+Reconstructed: 2
+
+Ground truth: et al .
+Reconstructed: et al .
+
+Ground truth: + pacs .
+Reconstructed: + pacs .
+
+Ground truth: email : hz@mssl.ucl.ac.uk_
+Reconstructed: email: hz@mssl.ucl.ac.uk/uk_
+
+Ground truth: +
+Reconstructed: +
+
+Ground truth: +
+Reconstructed: +
+
+Ground truth: _
+Reconstructed: _
+
+Ground truth: and + o. nachtmann + _
+Reconstructed: and + o. nachtmann + _ _
+
+Ground truth: master equation dynamics .
+Reconstructed: master equation dynamics .
+
+Ground truth: o.v .
+Reconstructed: o.v.
+
+Ground truth: tools from information geometry are extensively used .
+Reconstructed: tools from information geometry are widely used .
+
+Ground truth: _    1996 )
+Reconstructed: _ 1996 ]
+
+Ground truth: we find that an expansion _
+Reconstructed: we find that an expansion _
+
+Ground truth: * @xmath0 in @xmath1 symmetric supersymmetry *
+Reconstructed: * @ xmath0 in @ xmath1 symmetrical supersymmetry *
+
+Ground truth: numbers : 04.80nn,07.05kf,97.60jd
+Reconstructed: numbers: 04.80nn, 07.05kf,97.60jd
+
+Ground truth: _
+Reconstructed: _
+
