@@ -1,0 +1,8 @@
+# evaluation:
+eval_tasks: ["paws"]
+log_dir: "results/"
+checkpoint: "checkpoints/last.ckpt"
+
+# trainer:
+devices: "4,5,6,7" # GPU devices
+mgpu-strategy: "auto" # or "ddp" for distributed training

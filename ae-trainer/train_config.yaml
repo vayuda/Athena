@@ -1,0 +1,30 @@
+# config.yaml
+model:
+encoder: bert-large
+decoder: gpt2-medium
+
+# hparams:
+learning_rate: 1.e-4
+ar_loss_weight: 0.1
+noise_scale: 0.25
+
+# training:
+tr-precision: "bf16-mixed" # or bf16-mixed
+devices: "6,7" # GPU devices
+accumulate_grad_batches: 8
+gradient_clip_val: 1.0
+max_epochs: 20
+mgpu-strategy: "auto" # or "ddp" for distributed training
+
+# data:
+train_data_path: "data/chain-of-thought_bert_50000_train.tsv"
+validation_data_path: "data/chain-of-thought_bert_50000_val.tsv"
+num_workers: 4 # For DataLoader
+batch_size: 8
+
+# wandb: 814817
+wandb-project: "lcm-vae"
+wandb-run: "bix1eweo"
+checkpoint: "checkpoints/last.ckpt"
+
+
