@@ -1,8 +1,11 @@
 # evaluation:
-eval_tasks: ["paws"]
 log_dir: "results/"
-checkpoint: "checkpoints/last.ckpt"
-
+encoder: bert-large
+decoder: qwen2-1.5b
+checkpoint_path: checkpoints/bert-large_qwen2-1.5b_r1c025_mlm.pth
+n_eval: 10
+max_seq_len: 48
 # trainer:
-devices: "4,5,6,7" # GPU devices
+devices: "0," # GPU devices
 mgpu-strategy: "auto" # or "ddp" for distributed training
+use_cache: False

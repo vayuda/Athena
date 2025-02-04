@@ -1,18 +1,19 @@
 import yaml
 from argparse import ArgumentParser
 import pdb
-import pprint
+import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
+from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning.loggers import WandbLogger
-from lightning.pytorch.strategies import FSDPStrategy
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import Callback
+from typing import Set, Tuple
+from torch import Tensor
 
 
 
@@ -20,9 +21,8 @@ import wandb
 from peft import LoraConfig, get_peft_model
 
 from models import AttentionPool
+from data_loaders import TextDataModule
 
-
-# full AE model with BERT encoder, GPT2 decoder, and attention pooler
 class AutoEncoder(pl.LightningModule):
     def __init__(
         self,
@@ -30,232 +30,265 @@ class AutoEncoder(pl.LightningModule):
         decoder_info,
         pooler=AttentionPool,
         learning_rate=1e-4,
-        ar_loss_weight= 0.1,
-        noise_scale = 0.1,
-        context_length = 512,
+        temp_loss_weight= 0,
+        contrast_loss_weight = 1,
+        rec_loss_weight = 0,
+        teacher_forcing_ratio=0.5,
+        masked_token_prob=0.15,
     ):
         super().__init__()
         self.save_hyperparameters()
-        
+
         # Initialize tokenizers
         self.encoder_tokenizer = encoder_info['tokenizer']
         self.decoder_tokenizer = decoder_info['tokenizer']
-        
+
         # Ensure decoder tokenizer has pad token
         if self.decoder_tokenizer.pad_token is None:
             self.decoder_tokenizer.pad_token = self.decoder_tokenizer.eos_token
-        
+
+        # Ensure decoder tokenizer has bos token
+        if self.decoder_tokenizer.bos_token is None:
+            self.decoder_tokenizer.bos_token = self.decoder_tokenizer.eos_token
+
+        self.pad_token_id = self.decoder_tokenizer.pad_token_id
         # Initialize encoder
         base = encoder_info['model']
         for param in base.parameters():
             param.requires_grad = False
         self.encoder = get_peft_model(base, encoder_info['lora_config'])
-        
+
         # AE bottleneck
         self.pooler = pooler(self.encoder.config.hidden_size)
-        
+
         # Project latent space to decoder hidden dimension
         self.latent_proj = nn.Linear(
-            self.encoder.config.hidden_size, 
-            decoder_info['embedding_size']  # Use config value
+            self.encoder.config.hidden_size,
+            decoder_info['hidden_size']  # Use config value
         )
-        
+
         # Initialize decoder
         base = decoder_info['model']
         for param in base.parameters():
             param.requires_grad = False
         self.decoder = get_peft_model(base, decoder_info['lora_config'])
-        
-        
+
+
         # Store hyperparameters
         self.learning_rate = learning_rate
-        self.ar_loss_weight = ar_loss_weight
-        self.noise_scale = noise_scale
-        self.context_length = context_length
+        self.temp_weight = temp_loss_weight
+        self.rec_weight = rec_loss_weight
+        self.contrast_weight = contrast_loss_weight
+        self.teacher_forcing_ratio = teacher_forcing_ratio
+        self.masked_token_prob = masked_token_prob
 
     def encode(self, input_ids, attention_mask):
         # pdb.set_trace()
         encoder_outputs = self.encoder(input_ids, attention_mask=attention_mask)
-        pooled = self.pooler(encoder_outputs.last_hidden_state)
+        pooled = self.pooler(encoder_outputs.hidden_states[-1])
         latent = self.latent_proj(pooled)
         return latent
-    
+
     def decode(self, latent, input_ids, target_ids=None, attention_mask=None):
         # pdb.set_trace()
-        # add noise while training
-        if self.training:
-            noise = torch.randn_like(latent) * self.noise_scale
-            latent += noise
-            return self.decoder(input_ids, latent, labels = target_ids, attention_mask = attention_mask)
+        output = self.decoder(
+            input_ids = input_ids,
+            latent_vector = latent,
+            labels = target_ids,
+            attention_mask = attention_mask
+        )
+
+        if target_ids is not None:
+            return output.loss, output.logits
         else:
-            if target_ids is not None:
-                return self.decoder(input_ids, latent, labels = target_ids, attention_mask = attention_mask)
-            else:
-                return self.decoder(input_ids, latent, attention_mask = attention_mask)
+            return output.logits
+
+    def greedy_decode(self, latent: torch.Tensor, max_new_tokens: int = 64):
+        device = latent.device
+        batch_size = latent.size(0)
+
+        # Initialize input with bos token
+        bos_token_id = self.decoder_tokenizer.bos_token_id
+        input_ids = torch.full((batch_size, 1), bos_token_id, dtype=torch.long, device=device)
+
+        for step in range(max_new_tokens-1):
+            # print(f"Input IDs shape: {input_ids.shape}")
+            # print(f"Latent shape: {latent.shape}")
+
+            logits = self.decode(latent, input_ids)
+            # print(f"Logits shape: {logits.shape}")
+
+            next_token_logits = logits[:, -1, :]
+            # print(f"Next token logits shape: {next_token_logits.shape}")
+
+            next_token_id = torch.argmax(next_token_logits, dim=-1)
+            # print(f"Next token ID shape: {next_token_id.shape}")
+
+            input_ids = torch.cat([input_ids, next_token_id.unsqueeze(-1)], dim=-1)
+            # print(f"Updated input IDs shape: {input_ids.shape}")
+
+        return input_ids
+
+    def beam_decode(self, latent, max_new_tokens=64, beam_width=5):
+        device = latent.device
+        batch_size = latent.size(0)
+
+        # Initialize beams with cache
+        bos_token_id = self.decoder_tokenizer.bos_token_id
+        beams = [{
+            'sequence': torch.full((1, 1), bos_token_id, dtype=torch.long, device=device),
+            'score': 0.0,
+            'cache': None  # Will store KV cache
+        } for _ in range(beam_width)]
+
+        for step in range(max_new_tokens):
+            all_candidates = []
+
+            for beam in beams:
+                # Use cached computation where possible
+                output = self.decoder(
+                    input_ids=beam['sequence'],
+                    latent_vector=latent,
+                    use_cache=True,
+                    past_key_values=beam['cache']
+                )
+
+                logits = output.logits[:, -1, :]  # Get only last token logits
+                beam['cache'] = output.past_key_values  # Update cache
+
+                # Get top-k candidates
+                probs = F.log_softmax(logits, dim=-1)
+                topk_probs, topk_ids = torch.topk(probs[0], beam_width)
+
+                for prob, token_id in zip(topk_probs, topk_ids):
+                    new_sequence = torch.cat([beam['sequence'],
+                                           token_id.unsqueeze(0).unsqueeze(0)], dim=-1)
+                    all_candidates.append({
+                        'sequence': new_sequence,
+                        'score': beam['score'] + prob.item(),
+                        'cache': beam['cache']
+                    })
+
+            # Select top-k beams
+            beams = sorted(all_candidates, key=lambda x: x['score'], reverse=True)[:beam_width]
+
+            # Early stopping if all beams ended
+            if all(beam['sequence'][0, -1].item() == self.decoder_tokenizer.bos_token_id
+                   for beam in beams):
+                break
+
+        return beams[0]['sequence']  # Return best beam
 
     def forward(self, input_ids, target_ids, attention_mask):
         latent = self.encode(input_ids, attention_mask)
         return self.decode(latent, target_ids, target_ids = target_ids, attention_mask = attention_mask)
 
     def training_step(self, batch, batch_idx):
-        input_ids, target_ids, attention_mask = batch
-        
-        # Forward pass
-        latent = self.encode(input_ids, attention_mask)
-        ar_loss, logits = self.decode(latent, target_ids, attention_mask)
-        # Calculate cross entropy reconstruction loss
-        rec_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target_ids.view(-1))
+        (
+            src_enc_ids,
+            src_dec_label_ids,
+            tgt_enc_ids,
+            src_enc_attention_mask,
+            src_dec_attention_mask,
+            tgt_enc_attention_mask,
+        ) = batch
+        batch_size = src_enc_ids.size(0)
+        seq_len = src_enc_ids.size(1)
 
-        # KL divergence loss
-        #kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        
-        # Total loss
-        total_loss = rec_loss + self.ar_loss_weight * ar_loss #+ kl_loss
-        
+        src_latents2 = self.encode(src_enc_ids, src_enc_attention_mask)  # For contrastive loss
+        masked_input_ids = src_enc_ids.clone()
+        mask = torch.rand_like(src_enc_ids, dtype=torch.float) < self.masked_token_prob
+        masked_input_ids[mask] = self.encoder_tokenizer.mask_token_id
+
+        src_latents = self.encode(masked_input_ids, src_enc_attention_mask)
+
+        latents1_norm = F.normalize(src_latents, p=2, dim=1)
+        latents2_norm = F.normalize(src_latents2, p=2, dim=1)
+
+        # Decide whether to use teacher forcing for each item in batch
+        use_teacher_forcing = torch.rand(1).item() < self.teacher_forcing_ratio
+        bos_token_id = self.decoder_tokenizer.bos_token_id
+        if use_teacher_forcing:
+            # Traditional teacher forcing
+            dec_src_ids = torch.cat([
+                torch.full((batch_size, 1), bos_token_id, device=src_dec_label_ids.device),
+                src_dec_label_ids[:,:-1]
+            ], dim=1)
+        else:
+            # Generate without teacher forcing
+            dec_src_ids = self.greedy_decode(src_latents, max_new_tokens=seq_len)
+
+        src_ar_loss, src_logits = self.decode(src_latents, dec_src_ids, target_ids=src_dec_label_ids, attention_mask=src_dec_attention_mask)
+        src_rec_loss = F.cross_entropy(
+            src_logits.view(-1, src_logits.size(-1)),
+            src_dec_label_ids.view(-1),
+            ignore_index=self.pad_token_id,
+        )
+
+        # Compute contrastive loss
+        sim_matrix = torch.matmul(latents1_norm, latents2_norm.t())
+
+        # Temperature parameter for scaling
+        temp = 0.05
+        sim_matrix = sim_matrix / temp
+
+        # Labels for contrastive loss - diagonal elements are positive pairs
+        labels = torch.arange(batch_size, device=self.device)
+
+        # Compute contrastive loss in both directions
+        src_contrastive_loss = (
+            F.cross_entropy(sim_matrix, labels,
+            ignore_index=self.pad_token_id) +
+            F.cross_entropy(sim_matrix.t(), labels,
+            ignore_index=self.pad_token_id)
+        ) / 2
+
+        # temporal contrastive loss
+        tgt_latents = self.encode(tgt_enc_ids, tgt_enc_attention_mask)
+        tgt_latent_norm = F.normalize(tgt_latents, p=2, dim=1)
+        temp_sim_matrix = torch.matmul(latents1_norm, tgt_latent_norm.t())
+        temp_sim_matrix = temp_sim_matrix / temp
+        temporal_loss = F.cross_entropy(temp_sim_matrix, labels,
+        ignore_index=self.pad_token_id)
+
+        # Total loss (you can adjust weights)
+        total_loss = self.rec_weight * src_rec_loss + self.temp_weight * temporal_loss + self.contrast_weight * src_contrastive_loss
+
         # Log metrics
-        self.log('train_loss', total_loss)
-        self.log('train_rec_loss', rec_loss)
-        self.log('train_ar_loss', ar_loss)
-        
+        self.log('train_loss', total_loss, sync_dist=True)
+        self.log('train_rec_loss', src_rec_loss, sync_dist=True)
+        self.log('train_temp_loss', temporal_loss, sync_dist=True)
+        self.log('train_contrastive_loss', src_contrastive_loss, sync_dist=True)
+
         return total_loss
 
     def validation_step(self, batch, batch_idx):
-        encoder_input_ids, decoder_input_ids, attention_mask = batch
-        
-        # Forward pass
-        ar_loss, logits = self(encoder_input_ids, decoder_input_ids, attention_mask)
-        
-        # Calculate loss
-        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), decoder_input_ids.view(-1)) + self.ar_loss_weight * ar_loss
-        
-        self.log('val_loss', loss)
-        return loss
+        (
+            src_enc_ids,
+            src_dec_label_ids,
+            tgt_enc_ids,
+            src_enc_attention_mask,
+            src_dec_attention_mask,
+            tgt_enc_attention_mask,
+        ) = batch
+        seq_len = src_enc_ids.size(1)
+        # just focus on reconstruction loss from greedy decoding
+
+        src_latents = self.encode(src_enc_ids, src_enc_attention_mask)
+
+        decoder_src_input_ids = self.greedy_decode(src_latents, max_new_tokens=seq_len)
+        _, src_logits = self.decode(src_latents, decoder_src_input_ids, target_ids=src_dec_label_ids, attention_mask=src_dec_attention_mask)
+        total_loss = F.cross_entropy(
+            src_logits.view(-1, src_logits.size(-1)),
+            src_dec_label_ids.view(-1),
+            ignore_index=self.pad_token_id)
+
+        # Log metrics
+        self.log('val_loss', total_loss, sync_dist=True)
+        return total_loss
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-
-
-# DataModule for handling the bitext CSV data
-class TextAEDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        train_csv_path,
-        val_csv_path,
-        encoder_tokenizer,
-        decoder_tokenizer,
-        batch_size=32,
-        max_length=512,
-        num_workers=4,
-        source_col='source',
-        target_col='target',
-        delimiter='\t'
-    ):
-        super().__init__()
-        self.train_csv_path = train_csv_path
-        self.val_csv_path = val_csv_path
-        self.encoder_tokenizer = encoder_tokenizer
-        self.decoder_tokenizer = decoder_tokenizer
-        self.batch_size = batch_size
-        self.max_length = max_length
-        self.source_col = source_col
-        self.target_col = target_col
-        self.delimiter = delimiter
-        self.num_workers = num_workers
-        
-    def prepare_data(self):
-        # CSV data will be read during setup
-        pass
-        
-    def setup(self, stage=None):
-        from datasets import load_dataset
-        # Load datasets without streaming
-        train_dataset = load_dataset('csv', 
-            data_files=self.train_csv_path,
-            delimiter=self.delimiter)
-        
-        val_dataset = load_dataset('csv', 
-            data_files=self.val_csv_path,
-            delimiter=self.delimiter)
-        
-        self.train_dataset = TextDataset(
-            dataset=train_dataset,
-            encoder_tokenizer=self.encoder_tokenizer,
-            decoder_tokenizer=self.decoder_tokenizer,
-            max_length=self.max_length
-        )
-        
-        self.val_dataset = TextDataset(
-            dataset=val_dataset,
-            encoder_tokenizer=self.encoder_tokenizer,
-            decoder_tokenizer=self.decoder_tokenizer,
-            max_length=self.max_length
-        )
-        
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=2
-        )
-        
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,  # Validation data shouldn't be shuffled
-            pin_memory=True,
-            persistent_workers=True,
-            num_workers=self.num_workers,
-            prefetch_factor=2
-        )
-
-    
-# Dataset class for bitext data
-class TextDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, encoder_tokenizer, decoder_tokenizer, max_length, source_col='source', target_col='target'):
-        self.encoder_tokenizer = encoder_tokenizer
-        self.decoder_tokenizer = decoder_tokenizer
-        self.max_length = max_length
-        self.source_col = source_col
-        self.target_col = target_col
-        
-        # Load the entire dataset into memory
-        self.dataset = list(dataset['train'])
-        
-    def __len__(self):
-        return len(self.dataset)
-            
-    def __getitem__(self, idx):
-        item = self.dataset[idx]
-        
-        source_text = item[self.source_col]
-        target_text = item[self.target_col]
-        
-        encoder_tokens = self.encoder_tokenizer(
-            source_text,
-            max_length=self.max_length,
-            padding='max_length',
-            truncation=True,
-            return_tensors=None
-        )
-        
-        decoder_tokens = self.decoder_tokenizer(
-            target_text,
-            max_length=self.max_length,
-            padding='max_length',
-            truncation=True,
-            return_tensors=None
-        )
-        
-        return (
-            torch.tensor(encoder_tokens['input_ids']),
-            torch.tensor(decoder_tokens['input_ids']),
-            torch.tensor(encoder_tokens['attention_mask'])
-        )
 
 
 def retrieve_encoder(model):
@@ -268,20 +301,33 @@ def retrieve_encoder(model):
         assert False, "Invalid encoder name"
 
 
-def retrieve_decoder(model):
+def retrieve_decoder(model, use_cache=False):
     model_name = model.split("-")[0]
     model_size = model.split("-")[1]
-    if model_name == "gpt2":
-        from models import get_gpt2_struct
-        return get_gpt2_struct(model_size)
+
+    if model_name == "llama3":
+        from models import get_llama3_struct as get_model
+    elif model_name == "qwen2":
+        from models import get_qwen2_struct as get_model
     else:
-        assert False, "Invalid decoder name"
+        from models import get_gpt2_struct as get_model
+
+    return get_model(model_size, use_cache=use_cache)
+
+class CModelCheckpoint(pl.Callback):
+    def __init__(self, dirpath, filename):
+        self.dirpath = dirpath
+        self.filename = filename
+
+    def on_validation_end(self, trainer, pl_module):
+        # Save only the model's state_dict
+        torch.save(pl_module.state_dict(), f"{self.dirpath}/{self.filename}.pth")
 
 
-class MemoryProfileCallback(Callback):
+class MemoryProfileCallback(pl.Callback):
     def __init__(self):
         self.has_printed = False
-        
+
     def on_after_backward(self, trainer, pl_module):
         if not self.has_printed:
             stats = torch.cuda.memory_stats()
@@ -292,18 +338,16 @@ class MemoryProfileCallback(Callback):
             self.has_printed = True
 
 def main(args):
-    torch.set_float32_matmul_precision('medium')
     # setup weights and biases to track experiments
     # Load YAML config
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
-    
+
 
     #initialize encoder and decoder
     encoder_info = retrieve_encoder(config['encoder'])
     decoder_info = retrieve_decoder(config['decoder'])
-    context_length = min(encoder_info['context_length'], decoder_info['context_length'])
     # Initialize AE model
     if args.load_checkpoint:
         print("Loading checkpoint...")
@@ -320,27 +364,19 @@ def main(args):
         ae = AutoEncoder(encoder_info = encoder_info,
             decoder_info = decoder_info,
             learning_rate = config['learning_rate'],
-            ar_loss_weight= config['ar_loss_weight'],
-            noise_scale = config['noise_scale'],
+            temp_loss_weight= config['temp_loss_weight'],
+            rec_loss_weight = config['rec_loss_weight'],
+            contrast_loss_weight = config['contrast_loss_weight'],
+            teacher_forcing_ratio = config['teacher_forcing_ratio']
         )
-    print('model initialized, showing vram usage:')
-    # print(torch.cuda.memory_stats())
-    total_params = 0
-    params_with_grad = 0
 
-    # for name, param in ae.named_parameters():
-    #     total_params += 1
-    #     if param.requires_grad:
-    #         params_with_grad += 1
-    #         print(f"Parameter requiring grad: {name}")
-
-    # print(f"\nParameters with gradients: {params_with_grad}/{total_params}")
-    # exit()
     wandb_logger = WandbLogger(
         project="lcm-vae",  # Name of your W&B project
-        name=f"{config['encoder']}_{config['decoder']}_{args.v}",      
-        log_model="all"              # Optional: logs model checkpoints
+        name=f"{config['encoder']}_{config['decoder']}_{args.v}",
+        log_model=False  # Optional: logs model checkpoints
     )
+
+    model_callback = CModelCheckpoint(config["model_dir"], f"{config['encoder']}_{config['decoder']}_{args.v}")
     # Configure checkpointing callback
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints/",  # Where to save checkpoints locally
@@ -348,46 +384,42 @@ def main(args):
         monitor="val_loss",  # Metric to monitor for best model saving
         mode="min",  # 'min' for loss, 'max' for accuracy, etc.
         save_top_k=3,  # Save the top 3 models based on the monitored metric
-        save_last=True,  # Save the last checkpoint 
+        save_last=True,  # Save the last checkpoint
     )
 
-    # print("Model parameters:")
-    # for name, module in ae.named_modules():
-    #     print(f"{"  "}{name}")
-
-
     # Initialize data module
-    data_module = TextAEDataModule(
-        train_csv_path = config['train_data_path'],
-        val_csv_path = config['validation_data_path'],
+    data_module = TextDataModule(
+        file_path = config['data_path'],
         encoder_tokenizer=ae.encoder_tokenizer,
         decoder_tokenizer=ae.decoder_tokenizer,
         batch_size = config['batch_size'],
-        max_length = context_length,
+        max_length = config['max_length'],
+        num_workers= config['num_workers'],
+        train_ratio = config['train_ratio'],
     )
-    
     # Train model
     trainer = pl.Trainer(logger = wandb_logger,
-        callbacks=[checkpoint_callback, MemoryProfileCallback()],     
+        callbacks=[
+            checkpoint_callback,
+            MemoryProfileCallback(),
+            model_callback,
+            # stsb_eval_callback
+        ],
         max_epochs = config['max_epochs'],
         devices = config['devices'],
         accumulate_grad_batches = config['accumulate_grad_batches'],
         precision = config['tr-precision'],
         gradient_clip_val = config['gradient_clip_val'],
-        strategy = config['mgpu-strategy'],
+        strategy=DDPStrategy(find_unused_parameters=True),
         accelerator="gpu")
 
     trainer.fit(ae, data_module)
     wandb.finish()
 
 
-    
-
-    # Test reconstruction with a sample text
-    # sample_text = "This is a test sentence to check reconstruction."
-    # reconstruct_text(ae, sample_text)
-
 if __name__ == "__main__":
+    torch._dynamo.config.suppress_errors = True
+    torch.set_float32_matmul_precision('medium')
     parser = ArgumentParser()
     # model arguments
     parser.add_argument("--config", type=str, required=True)
@@ -395,4 +427,3 @@ if __name__ == "__main__":
     parser.add_argument("--load_checkpoint", action="store_true", default=False)
     args = parser.parse_args()
     main(args)
-    
