@@ -1,35 +1,27 @@
 import torch.nn as nn
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import Qwen2ForCausalLM, Qwen2TokenizerFast
 from peft import LoraConfig
 from .cross_attention import CrossAttentionDecoderLayerWrapper, CrossAttention
 
 class Qwen2CA(nn.Module):
-    def __init__(self, model, cross_attn_layers, cross_attn_heads):
+    def __init__(self, model, latent_dim):
         super().__init__()
         self.model = model
-        self.cross_attn_layers = cross_attn_layers
+        if self.model.config.hidden_size % 64 != 0:
+            raise ValueError("Hidden size must be divisible by 64")
+        nheads = self.model.config.hidden_size // 64
 
         # Get reference to decoder layers
         self.layers = self.model.model.layers
         self._latent_vector = None
         # Replace all layers with conditional cross-attention layers
         for i, layer in enumerate(self.layers):
-            layer_idx = i
-            apply_cross_attn = layer_idx in cross_attn_layers
-
-            if apply_cross_attn:
-                self.layers[layer_idx] = CrossAttentionDecoderLayerWrapper(
-                    original_layer=layer,
-                    cross_attn_module=CrossAttention(self.model.config.hidden_size, cross_attn_heads),
-                    apply_cross_attn=True
-                ).to(torch.bfloat16)
-            else:
-                self.layers[layer_idx] = CrossAttentionDecoderLayerWrapper(
-                    original_layer=layer,
-                    cross_attn_module=None,
-                    apply_cross_attn=False
-                ).to(torch.bfloat16)
+            self.layers[i] = CrossAttentionDecoderLayerWrapper(
+                original_layer=layer,
+                cross_attn_module=CrossAttention(self.model.config.hidden_size, latent_dim, nheads),
+                apply_cross_attn=True
+            ).to(torch.bfloat16)
 
     def forward(
             self,
@@ -55,30 +47,28 @@ class Qwen2CA(nn.Module):
                 past_key_values=past_key_values,
             )
 
-def get_qwen2_struct(size, use_cache=False):
+def get_qwen2_struct(size, **kwargs):
+    use_cache = kwargs.get("use_cache", False)
+    latent_dim = kwargs.get("latent_dim", 2048)
     if size == "1.5b":
         model_name = "Qwen/Qwen2.5-1.5B"
-        cross_attn_heads = 16  # Adjust based on model architecture
-        cross_attn_layers = [5, 10, 15, 20]  # Adjust based on number of layers
     else:
         raise ValueError(f"Unsupported Qwen2 model size: {size}")
 
     # Load base model
     print(f"Loading model: {model_name}, using cache: {use_cache}")
-    model = AutoModelForCausalLM.from_pretrained(
+    model = Qwen2ForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         use_cache=use_cache,
     )
-    print("Model layers configuration:")
-    print(f"Layer structure: {model.model.layers}")
 
     # Modify model architecture
-    modified_model = Qwen2CA(model, cross_attn_layers, cross_attn_heads)
+    modified_model = Qwen2CA(model, latent_dim)
 
     return {
         "model": modified_model,
-        "tokenizer": AutoTokenizer.from_pretrained(model_name),
+        "tokenizer": Qwen2TokenizerFast.from_pretrained(model_name),
         "lora_config": LoraConfig(
             r=16,
             lora_alpha=32,

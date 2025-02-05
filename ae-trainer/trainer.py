@@ -11,16 +11,12 @@ import pytorch_lightning as pl
 from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning import Callback
-from typing import Set, Tuple
-from torch import Tensor
-
-
 
 import wandb
 from peft import LoraConfig, get_peft_model
+from transformers import get_linear_schedule_with_warmup
 
-from models import AttentionPool
+from models import SimpleAttentionPool
 from data_loaders import TextDataModule
 
 class AutoEncoder(pl.LightningModule):
@@ -28,7 +24,8 @@ class AutoEncoder(pl.LightningModule):
         self,
         encoder_info,
         decoder_info,
-        pooler=AttentionPool,
+        pooler=SimpleAttentionPool,
+        bottleneck_size=2048,
         learning_rate=1e-4,
         temp_loss_weight= 0,
         contrast_loss_weight = 1,
@@ -60,7 +57,7 @@ class AutoEncoder(pl.LightningModule):
 
         # AE bottleneck
         self.pooler = pooler(self.encoder.config.hidden_size)
-
+        self.up = nn.Linear(self.encoder.config.hidden_size, bottleneck_size)
         # Project latent space to decoder hidden dimension
         self.latent_proj = nn.Linear(
             self.encoder.config.hidden_size,
@@ -288,7 +285,22 @@ class AutoEncoder(pl.LightningModule):
         return total_loss
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = int(0.05 * total_steps)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=warmup_steps,
+            num_training_steps=total_steps
+        )
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'interval': 'step',  # or 'epoch'
+                'frequency': 1
+            }
+        }
 
 
 def retrieve_encoder(model):
@@ -315,9 +327,10 @@ def retrieve_decoder(model, use_cache=False):
     return get_model(model_size, use_cache=use_cache)
 
 class CModelCheckpoint(pl.Callback):
-    def __init__(self, dirpath, filename):
+    def __init__(self, dirpath, filename, end_batch_size):
         self.dirpath = dirpath
         self.filename = filename
+        self.end_batch_size = end_batch_size
 
     def on_validation_end(self, trainer, pl_module):
         # Save only the model's state_dict
@@ -342,8 +355,9 @@ def main(args):
     # Load YAML config
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
-
-
+    print(config)
+    if 'seed' in config:
+        pl.seed_everything(config['seed'])
 
     #initialize encoder and decoder
     encoder_info = retrieve_encoder(config['encoder'])
@@ -367,7 +381,8 @@ def main(args):
             temp_loss_weight= config['temp_loss_weight'],
             rec_loss_weight = config['rec_loss_weight'],
             contrast_loss_weight = config['contrast_loss_weight'],
-            teacher_forcing_ratio = config['teacher_forcing_ratio']
+            teacher_forcing_ratio = config['teacher_forcing_ratio'],
+            masked_token_prob = config['masked_token_prob']
         )
 
     wandb_logger = WandbLogger(

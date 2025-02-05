@@ -2,17 +2,17 @@
 # model:
 encoder: bert-large
 decoder: qwen2-1.5b
-
+bottleneck_size: 4096
 # hparams:
-learning_rate: 1.e-4
+learning_rate: 4.e-4
 temp_loss_weight: 0
-contrast_loss_weight: 0.1
+contrast_loss_weight: 0.25
 rec_loss_weight: 1
 teacher_forcing_ratio: 0.5
-
+masked_token_prob: 0.15
 # training:
 tr-precision: "bf16-mixed" # or bf16-mixed
-devices: "4,5,6,7" # GPU devices
+devices: "0,1,2,3" # GPU devices
 
 accumulate_grad_batches: 2
 gradient_clip_val: 1.0
@@ -25,8 +25,8 @@ num_workers: 2
 train_ratio: 0.8
 batch_size: 64
 max_length: 48
-
-# wandb: 814817
+seed: 42
+# wandb: 245613
 wandb-project: "lcm-vae"
 checkpoint: "checkpoints/last.ckpt"
 model_dir: "checkpoints/"
