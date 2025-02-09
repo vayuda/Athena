@@ -1,6 +1,7 @@
 ### Ae-trainer:
 Trains auto-encoders by fine-tuning pretrained encoder and decoder models to create latent representations.
 #### Usage:
+Required libraries are found in `Ae-trainer/requirements.txt`. To run sonar, visit the [official repo](https://github.com/facebookresearch/SONAR) and follow their instructions 
 First run
 `python prep_data.py` with the appropriate args to generate the data.
 Then update `train_config.yaml` according to your needs.
