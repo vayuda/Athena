@@ -22,7 +22,7 @@ def process_gsm8kcot(text):
             i += 1
     return merged
 
-def load_model(checkpoint_path, encoder_info, decoder_info, device):
+def load_model(checkpoint_path, encoder_info, decoder_info, device, **kwargs):
     """
     Loads the AutoEncoder model from the checkpoint.
 
@@ -39,10 +39,7 @@ def load_model(checkpoint_path, encoder_info, decoder_info, device):
     model = AutoEncoder(
         encoder_info=encoder_info,
         decoder_info=decoder_info,
-        learning_rate=encoder_info.get('learning_rate', 1e-4),
-        temp_loss_weight=encoder_info.get('temp_loss_weight', 0),
-        contrast_loss_weight=encoder_info.get('contrast_loss_weight', 1),
-        rec_loss_weight=encoder_info.get('rec_loss_weight', 0)
+        **kwargs,
     )
 
     # Load the state dict
@@ -118,7 +115,7 @@ def main(args):
 
     # Retrieve encoder and decoder configurations
     encoder_info = retrieve_encoder(config['encoder'])
-    decoder_info = retrieve_decoder(config['decoder'], use_cache=config['use_cache'])
+    decoder_info = retrieve_decoder(config['decoder'],**config['decoder_config'])
 
     # Load the AutoEncoder model
     print("Loading AutoEncoder model...")
@@ -126,8 +123,9 @@ def main(args):
         checkpoint_path=config['checkpoint_path'],
         encoder_info=encoder_info,
         decoder_info=decoder_info,
-        device=device
-    ).to(torch.bfloat16).eval()
+        device=device,
+        **config['hparams']
+    ).to(torch.bfloat16)
     if torch.cuda.device_count() > 1:
         ae_model = DataParallel(ae_model)
 
@@ -175,6 +173,7 @@ def main(args):
     # Prepare output file
     output_file = args.output if args.output else "reconstructions.txt"
     with open(output_file, "w", encoding="utf-8") as f_out:
+        f_out.write('Original |<><>| Reconstructed\n\n')
         # Iterate over each example
         for idx, example in enumerate(tqdm(selected_data, desc="Reconstructing")):
             steps = example['step_list']
@@ -188,13 +187,8 @@ def main(args):
             )
 
             # Write to file
-            f_out.write(f"Example {idx + 1}:\n")
-            f_out.write("Original Sentences:\n")
-            for sentence in original_sentences:
-                f_out.write(sentence + "\n")
-            f_out.write("\nReconstructed Sentences:\n")
-            for sentence in reconstructed_sentences:
-                f_out.write(sentence + "\n")
+            for i in range(len(original_sentences)):
+                f_out.write(original_sentences[i] + " |<><>| " + reconstructed_sentences[i] + "\n")
             f_out.write("\n" + "="*50 + "\n\n")
 
     print(f"Reconstruction completed. Results saved to {output_file}")

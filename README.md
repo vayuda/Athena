@@ -1,5 +1,20 @@
-The ultimate goal is to first learn bidirectional mappings between multimodal concepts and latent space to then perform next concept prediction. This sequence of latents is then used to condition a decoder to generate text (or images?). 
-### Semantics:
-Explores how one parses text and splits it into concepts for a model to then learn. 
-### Ae-trainer: 
+### Ae-trainer:
 Trains auto-encoders by fine-tuning pretrained encoder and decoder models to create latent representations.
+#### Usage:
+First run
+`python prep_data.py` with the appropriate args to generate the data.
+Then update `train_config.yaml` according to your needs.
+Finally run `python ae_trainer.py --config train_config.yaml`
+#### Results:
+Currently acheives around ~3 validation loss (22 perplexity) with the config provided, but reconstructions are poor.
+If you can somehow make use of the epoch=19 checkpoint, that achieved ~2.04 validation loss (7.7 perplexity) on the older architecture and had decent reconstruction capabilities.
+#### Models:
+Code to support the following models:
+- Modern BERT
+- GPT-2 (needs to be updated)
+- llama3
+- qwen2.5
+Additionaly supports cross attention module
+
+### sonar_eval:
+Evaluates the encoding performance of the sonar model on various tasks.

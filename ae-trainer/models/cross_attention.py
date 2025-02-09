@@ -56,7 +56,7 @@ class CrossAttentionDecoderLayerWrapper(nn.Module):
         super().__init__()
         self.original_layer = original_layer
         self.cross_attn = cross_attn_module
-        self.apply_cross_attn = apply_cross_attn
+        self.apply_cross_attn = self.cross_attn != None
 
     def forward(self, hidden_states, latent_vector=None, use_cache=False, past_key_value=None, **kwargs):
         # Prepare kwargs for original layer

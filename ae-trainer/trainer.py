@@ -25,17 +25,21 @@ class AutoEncoder(pl.LightningModule):
         encoder_info,
         decoder_info,
         pooler=SimpleAttentionPool,
-        bottleneck_size=2048,
-        learning_rate=1e-4,
-        temp_loss_weight= 0,
-        contrast_loss_weight = 1,
-        rec_loss_weight = 0,
-        teacher_forcing_ratio=0.5,
-        masked_token_prob=0.15,
+        **kwargs
     ):
         super().__init__()
+        # Store hyperparameters
+        self.learning_rate = kwargs.get('learning_rate', 1e-4)
+        self.temp_weight = kwargs.get('temp_loss_weight', 0)
+        self.rec_weight = kwargs.get('rec_loss_weight', 1)
+        self.contrast_weight = kwargs.get('contrast_loss_weight', 0.25)
+        self.teacher_forcing_ratio = kwargs.get('teacher_forcing_ratio', 0.5)
+        self.masked_token_prob = kwargs.get('masked_token_prob', 0.15)
+        self.latent_dim = kwargs.get('latent_dim', 2048)
+        self.beta = kwargs.get('beta', 1.0)  # KL weight
+        self.kl_annealing_steps = kwargs.get('kl_annealing_steps', 10000)
         self.save_hyperparameters()
-
+        self.log_var = nn.Parameter(torch.zeros(1, self.latent_dim))
         # Initialize tokenizers
         self.encoder_tokenizer = encoder_info['tokenizer']
         self.decoder_tokenizer = decoder_info['tokenizer']
@@ -49,41 +53,34 @@ class AutoEncoder(pl.LightningModule):
             self.decoder_tokenizer.bos_token = self.decoder_tokenizer.eos_token
 
         self.pad_token_id = self.decoder_tokenizer.pad_token_id
-        # Initialize encoder
+
+        # Encoder
         base = encoder_info['model']
         for param in base.parameters():
             param.requires_grad = False
         self.encoder = get_peft_model(base, encoder_info['lora_config'])
 
-        # AE bottleneck
+        #Bottleneck
         self.pooler = pooler(self.encoder.config.hidden_size)
-        self.up = nn.Linear(self.encoder.config.hidden_size, bottleneck_size)
-        # Project latent space to decoder hidden dimension
-        self.latent_proj = nn.Linear(
+        self.up = nn.Linear(
             self.encoder.config.hidden_size,
-            decoder_info['hidden_size']  # Use config value
+            self.latent_dim
         )
 
-        # Initialize decoder
+        # Decoder
         base = decoder_info['model']
         for param in base.parameters():
             param.requires_grad = False
         self.decoder = get_peft_model(base, decoder_info['lora_config'])
 
 
-        # Store hyperparameters
-        self.learning_rate = learning_rate
-        self.temp_weight = temp_loss_weight
-        self.rec_weight = rec_loss_weight
-        self.contrast_weight = contrast_loss_weight
-        self.teacher_forcing_ratio = teacher_forcing_ratio
-        self.masked_token_prob = masked_token_prob
+
 
     def encode(self, input_ids, attention_mask):
         # pdb.set_trace()
         encoder_outputs = self.encoder(input_ids, attention_mask=attention_mask)
         pooled = self.pooler(encoder_outputs.hidden_states[-1])
-        latent = self.latent_proj(pooled)
+        latent = self.up(pooled)
         return latent
 
     def decode(self, latent, input_ids, target_ids=None, attention_mask=None):
@@ -109,24 +106,15 @@ class AutoEncoder(pl.LightningModule):
         input_ids = torch.full((batch_size, 1), bos_token_id, dtype=torch.long, device=device)
 
         for step in range(max_new_tokens-1):
-            # print(f"Input IDs shape: {input_ids.shape}")
-            # print(f"Latent shape: {latent.shape}")
-
             logits = self.decode(latent, input_ids)
-            # print(f"Logits shape: {logits.shape}")
-
             next_token_logits = logits[:, -1, :]
-            # print(f"Next token logits shape: {next_token_logits.shape}")
-
             next_token_id = torch.argmax(next_token_logits, dim=-1)
-            # print(f"Next token ID shape: {next_token_id.shape}")
-
             input_ids = torch.cat([input_ids, next_token_id.unsqueeze(-1)], dim=-1)
-            # print(f"Updated input IDs shape: {input_ids.shape}")
 
         return input_ids
 
     def beam_decode(self, latent, max_new_tokens=64, beam_width=5):
+        # TODO: fix caching to make this work
         device = latent.device
         batch_size = latent.size(0)
 
@@ -192,29 +180,29 @@ class AutoEncoder(pl.LightningModule):
         batch_size = src_enc_ids.size(0)
         seq_len = src_enc_ids.size(1)
 
-        src_latents2 = self.encode(src_enc_ids, src_enc_attention_mask)  # For contrastive loss
+        # Corrupt input ids with mask tokens
         masked_input_ids = src_enc_ids.clone()
         mask = torch.rand_like(src_enc_ids, dtype=torch.float) < self.masked_token_prob
         masked_input_ids[mask] = self.encoder_tokenizer.mask_token_id
-
         src_latents = self.encode(masked_input_ids, src_enc_attention_mask)
+        src_latents2 = self.encode(src_enc_ids, src_enc_attention_mask)  # For contrastive loss
 
-        latents1_norm = F.normalize(src_latents, p=2, dim=1)
-        latents2_norm = F.normalize(src_latents2, p=2, dim=1)
+        # Calculate KL divergence loss
+        kl_loss = -0.5 * torch.sum(1 + self.log_var - src_latents.pow(2) - self.log_var.exp())
+        kl_loss = kl_loss / batch_size  # Normalize by batch size
 
-        # Decide whether to use teacher forcing for each item in batch
+        # Teacher forcing logic
         use_teacher_forcing = torch.rand(1).item() < self.teacher_forcing_ratio
         bos_token_id = self.decoder_tokenizer.bos_token_id
         if use_teacher_forcing:
-            # Traditional teacher forcing
             dec_src_ids = torch.cat([
                 torch.full((batch_size, 1), bos_token_id, device=src_dec_label_ids.device),
                 src_dec_label_ids[:,:-1]
             ], dim=1)
         else:
-            # Generate without teacher forcing
             dec_src_ids = self.greedy_decode(src_latents, max_new_tokens=seq_len)
 
+        # Reconstruction loss
         src_ar_loss, src_logits = self.decode(src_latents, dec_src_ids, target_ids=src_dec_label_ids, attention_mask=src_dec_attention_mask)
         src_rec_loss = F.cross_entropy(
             src_logits.view(-1, src_logits.size(-1)),
@@ -222,38 +210,41 @@ class AutoEncoder(pl.LightningModule):
             ignore_index=self.pad_token_id,
         )
 
-        # Compute contrastive loss
+        # SimCSE loss calculation
+        latents1_norm = F.normalize(src_latents, p=2, dim=1)
+        latents2_norm = F.normalize(src_latents2, p=2, dim=1)
         sim_matrix = torch.matmul(latents1_norm, latents2_norm.t())
-
-        # Temperature parameter for scaling
         temp = 0.05
         sim_matrix = sim_matrix / temp
-
-        # Labels for contrastive loss - diagonal elements are positive pairs
         labels = torch.arange(batch_size, device=self.device)
-
-        # Compute contrastive loss in both directions
         src_contrastive_loss = (
-            F.cross_entropy(sim_matrix, labels,
-            ignore_index=self.pad_token_id) +
-            F.cross_entropy(sim_matrix.t(), labels,
-            ignore_index=self.pad_token_id)
+            F.cross_entropy(sim_matrix, labels, ignore_index=self.pad_token_id) +
+            F.cross_entropy(sim_matrix.t(), labels, ignore_index=self.pad_token_id)
         ) / 2
 
-        # temporal contrastive loss
+        # Temporal contrastive loss (not currently used but interesting to track)
         tgt_latents = self.encode(tgt_enc_ids, tgt_enc_attention_mask)
         tgt_latent_norm = F.normalize(tgt_latents, p=2, dim=1)
         temp_sim_matrix = torch.matmul(latents1_norm, tgt_latent_norm.t())
         temp_sim_matrix = temp_sim_matrix / temp
-        temporal_loss = F.cross_entropy(temp_sim_matrix, labels,
-        ignore_index=self.pad_token_id)
+        temporal_loss = F.cross_entropy(temp_sim_matrix, labels, ignore_index=self.pad_token_id)
 
-        # Total loss (you can adjust weights)
-        total_loss = self.rec_weight * src_rec_loss + self.temp_weight * temporal_loss + self.contrast_weight * src_contrastive_loss
+        # ELBO loss combines reconstruction loss and KL divergence
+        beta = min(self.global_step / self.kl_annealing_steps, 1.0) * self.beta
+        elbo_loss = src_rec_loss + 0 * beta * kl_loss
+
+        # Total loss combining all components
+        total_loss = (
+            self.rec_weight * elbo_loss +
+            self.temp_weight * temporal_loss +
+            self.contrast_weight * src_contrastive_loss
+        )
 
         # Log metrics
         self.log('train_loss', total_loss, sync_dist=True)
         self.log('train_rec_loss', src_rec_loss, sync_dist=True)
+        self.log('train_kl_loss', kl_loss, sync_dist=True)
+        self.log('train_elbo_loss', elbo_loss, sync_dist=True)
         self.log('train_temp_loss', temporal_loss, sync_dist=True)
         self.log('train_contrastive_loss', src_contrastive_loss, sync_dist=True)
 
@@ -269,10 +260,9 @@ class AutoEncoder(pl.LightningModule):
             tgt_enc_attention_mask,
         ) = batch
         seq_len = src_enc_ids.size(1)
+
         # just focus on reconstruction loss from greedy decoding
-
         src_latents = self.encode(src_enc_ids, src_enc_attention_mask)
-
         decoder_src_input_ids = self.greedy_decode(src_latents, max_new_tokens=seq_len)
         _, src_logits = self.decode(src_latents, decoder_src_input_ids, target_ids=src_dec_label_ids, attention_mask=src_dec_attention_mask)
         total_loss = F.cross_entropy(
@@ -287,22 +277,24 @@ class AutoEncoder(pl.LightningModule):
     def configure_optimizers(self):
         total_steps = self.trainer.estimated_stepping_batches
         warmup_steps = int(0.05 * total_steps)
+        # Optionally can create parameter groups with different learning rates
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps
         )
+
         return {
             'optimizer': optimizer,
             'lr_scheduler': {
                 'scheduler': scheduler,
-                'interval': 'step',  # or 'epoch'
+                'interval': 'step',
                 'frequency': 1
             }
         }
 
-
+# To enable easier addition of new models
 def retrieve_encoder(model):
     model_name = model.split("-")[0]
     model_size = model.split("-")[1]
@@ -313,7 +305,7 @@ def retrieve_encoder(model):
         assert False, "Invalid encoder name"
 
 
-def retrieve_decoder(model, use_cache=False):
+def retrieve_decoder(model, **kwargs):
     model_name = model.split("-")[0]
     model_size = model.split("-")[1]
 
@@ -324,19 +316,19 @@ def retrieve_decoder(model, use_cache=False):
     else:
         from models import get_gpt2_struct as get_model
 
-    return get_model(model_size, use_cache=use_cache)
+    return get_model(model_size, **kwargs)
 
+# save model after every epoch
 class CModelCheckpoint(pl.Callback):
-    def __init__(self, dirpath, filename, end_batch_size):
+    def __init__(self, dirpath, filename):
         self.dirpath = dirpath
         self.filename = filename
-        self.end_batch_size = end_batch_size
 
     def on_validation_end(self, trainer, pl_module):
         # Save only the model's state_dict
         torch.save(pl_module.state_dict(), f"{self.dirpath}/{self.filename}.pth")
 
-
+# Track memory usage
 class MemoryProfileCallback(pl.Callback):
     def __init__(self):
         self.has_printed = False
@@ -359,10 +351,11 @@ def main(args):
     if 'seed' in config:
         pl.seed_everything(config['seed'])
 
-    #initialize encoder and decoder
-    encoder_info = retrieve_encoder(config['encoder'])
-    decoder_info = retrieve_decoder(config['decoder'])
     # Initialize AE model
+    encoder_info = retrieve_encoder(config['encoder'])
+    decoder_info = retrieve_decoder(config['decoder'], **{"latent_dim": config['hparams']["latent_dim"]})
+
+    # loading from a checkpoint doesn't work for some reason
     if args.load_checkpoint:
         print("Loading checkpoint...")
         wandb.init(project=config['wandb-project'],
@@ -371,28 +364,26 @@ def main(args):
             name=f"{config['encoder']}_{config['decoder']}_{args.v}")
         ae = AutoEncoder.load_from_checkpoint(config['checkpoint'],
             encoder_info=encoder_info,
-            decoder_info=decoder_info)
+            decoder_info=decoder_info,
+            **config['hparams']
+        )
 
     else:
         print("Initializing model...")
         ae = AutoEncoder(encoder_info = encoder_info,
             decoder_info = decoder_info,
-            learning_rate = config['learning_rate'],
-            temp_loss_weight= config['temp_loss_weight'],
-            rec_loss_weight = config['rec_loss_weight'],
-            contrast_loss_weight = config['contrast_loss_weight'],
-            teacher_forcing_ratio = config['teacher_forcing_ratio'],
-            masked_token_prob = config['masked_token_prob']
+            **config['hparams']
         )
 
+    # Initialize wandb logger for experiment tracking
     wandb_logger = WandbLogger(
         project="lcm-vae",  # Name of your W&B project
         name=f"{config['encoder']}_{config['decoder']}_{args.v}",
         log_model=False  # Optional: logs model checkpoints
     )
 
+    # Initialize callbacks
     model_callback = CModelCheckpoint(config["model_dir"], f"{config['encoder']}_{config['decoder']}_{args.v}")
-    # Configure checkpointing callback
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints/",  # Where to save checkpoints locally
         filename="{epoch}-{val_loss:.2f}",  # Checkpoint file naming

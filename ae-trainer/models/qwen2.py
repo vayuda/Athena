@@ -1,3 +1,4 @@
+from timm.models.layers import cbam
 import torch.nn as nn
 import torch
 from transformers import Qwen2ForCausalLM, Qwen2TokenizerFast
@@ -15,12 +16,13 @@ class Qwen2CA(nn.Module):
         # Get reference to decoder layers
         self.layers = self.model.model.layers
         self._latent_vector = None
-        # Replace all layers with conditional cross-attention layers
+        # Replace  layers with cross-attention layers
+        # half = len(self.layers) // 2
         for i, layer in enumerate(self.layers):
+            cam = CrossAttention(self.model.config.hidden_size, latent_dim, nheads)
             self.layers[i] = CrossAttentionDecoderLayerWrapper(
                 original_layer=layer,
-                cross_attn_module=CrossAttention(self.model.config.hidden_size, latent_dim, nheads),
-                apply_cross_attn=True
+                cross_attn_module=cam,
             ).to(torch.bfloat16)
 
     def forward(
@@ -48,10 +50,13 @@ class Qwen2CA(nn.Module):
             )
 
 def get_qwen2_struct(size, **kwargs):
+    print(kwargs)
     use_cache = kwargs.get("use_cache", False)
-    latent_dim = kwargs.get("latent_dim", 2048)
+    latent_dim = kwargs.get("latent_dim", 4096)
     if size == "1.5b":
         model_name = "Qwen/Qwen2.5-1.5B"
+    elif size == "3bcode":
+        model_name = "Qwen/Qwen2.5-Coder-3B"
     else:
         raise ValueError(f"Unsupported Qwen2 model size: {size}")
 
