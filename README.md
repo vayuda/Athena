@@ -6,8 +6,7 @@ First run
 Then update `train_config.yaml` according to your needs.
 Finally run `python ae_trainer.py --config train_config.yaml`
 #### Results:
-Currently acheives around ~3 validation loss (22 perplexity) with the config provided, but reconstructions are poor.
-If you can somehow make use of the epoch=19 checkpoint, that achieved ~2.04 validation loss (7.7 perplexity) on the older architecture and had decent reconstruction capabilities.
+Currently acheives around ~3 validation loss (22 perplexity) with the config provided, but reconstructions are still poor.
 #### Models:
 Code to support the following models:
 - Modern BERT
