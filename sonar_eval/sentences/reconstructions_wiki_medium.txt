@@ -1,0 +1,90 @@
+Ground truth: She told her mum what had happened and that she was sorry.
+Reconstructed: She told her mom what had happened and that she was sorry.
+
+Ground truth: Lily had a friend named Tom, who was a little boy.
+Reconstructed: Lily had a friend named Tom, who was a little boy.
+
+Ground truth: She liked to plan fun things for her friends to do.
+Reconstructed: She liked to plan fun things for her friends to do.
+
+Ground truth: He told Lily that if she took care of a flower, it would bloom and become very pretty.
+Reconstructed: He told Lily that if she took care of a flower, it would bloom and become very pretty.
+
+Ground truth: Tim ran as fast as he could, but the bird was faster.
+Reconstructed: Tim ran as fast as he could, but the bird was faster.
+
+Ground truth: With the doll gone and the men walking away, Anna realized she had made a big mistake.
+Reconstructed: With the doll gone and the men walking away, Anna realized she had made a big mistake.
+
+Ground truth: He lived in a small house with his friend, a little girl named Sue.
+Reconstructed: He lived in a small house with his friend, a little girl named Sue.
+
+Ground truth: He had a big smile and he was very kind.
+Reconstructed: He had a big smile and he was very kind.
+
+Ground truth: Kath laughed at the shower and didn't take care of herself.
+Reconstructed: Kath laughed at the shower and didn't take care of herself.
+
+Ground truth: Once upon a time, in a small town, there was a friendly girl named Lily.
+Reconstructed: Once upon a time, in a small town, there was a friendly girl named Lily.
+
+Ground truth: One day, a little girl named Lily came to the garden.
+Reconstructed: One day, a little girl named Lily came to the garden.
+
+Ground truth: Tim and his mom worked together to fix the machine.
+Reconstructed: Tim and his mom worked together to fix the machine.
+
+Ground truth: He used his paw to remove the balloon from the ceiling.
+Reconstructed: He used his paw to remove the balloon from the ceiling.
+
+Ground truth: But then he noticed that a distant mountain was in the way.
+Reconstructed: But then he noticed that a distant mountain was in the way.
+
+Ground truth: The nice man worked hard to repair the blue car.
+Reconstructed: The nice man worked hard to repair the blue car.
+
+Ground truth: Every morning, Nikki would wake up and stretch out her tiny muscles.
+Reconstructed: Every morning, Nikki would wake up and stretch her tiny muscles.
+
+Ground truth: One day, a funny cat named Kitty wanted to organize a play day for all her friends.
+Reconstructed: One day, a funny cat named Kitty wanted to organize a play day for all her friends.
+
+Ground truth: His friends, the birds, saw him and wanted to help.
+Reconstructed: His friends, the birds, saw him and wanted to help.
+
+Ground truth: His mom says, "I know, Tom, but you have to rest.
+Reconstructed: His mom says, "I know, Tom, but you have to rest.
+
+Ground truth: And the good lady was happy because she knew she was loved, even if she could not sing.
+Reconstructed: And the good lady was happy because she knew she was loved, even though she couldn't sing.
+
+Ground truth: He said, "I can fill my tummy faster than you!"
+Reconstructed: He said, "I can fill my stomach faster than you!"
+
+Ground truth: He took a car and pretended it was driving up the volcano.
+Reconstructed: He took a car and pretended it was driving up the volcano.
+
+Ground truth: Sneeze loved to run and play with her friends in the sun.
+Reconstructed: Sneeze loved running and playing with her friends on the sun.
+
+Ground truth: The snowman and the snow monkey became smaller and smaller.
+Reconstructed: The snowman and the snow monkey became smaller and smaller.
+
+Ground truth: Kitty made a list of all the things they needed for the play day.
+Reconstructed: Kitty made a list of all the things they needed for the play day.
+
+Ground truth: She ran after the boy, but he was too fast.
+Reconstructed: She ran after the boy, but he was too fast.
+
+Ground truth: "You need to keep your coat on or you'll be cold."
+Reconstructed: "You need to keep your coat on or you'll be cold".
+
+Ground truth: The boy walked slowly towards the cow and said hello.
+Reconstructed: The boy walked slowly towards the cow and said hello.
+
+Ground truth: Tom thought for a moment and said, "Yes, I can make something tasty for you!
+Reconstructed: Tom thought for a moment and said, "Yes, I can make something tasty for you!
+
+Ground truth: The fox said, "I want to bounce the ball, but it's too hard."
+Reconstructed: The fox said, "I want to bounce the ball, but it is too hard".
+
