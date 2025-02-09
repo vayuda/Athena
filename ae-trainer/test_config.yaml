@@ -2,10 +2,21 @@
 log_dir: "results/"
 encoder: bert-large
 decoder: qwen2-1.5b
-checkpoint_path: checkpoints/bert-large_qwen2-1.5b_r1c025_mlm.pth
+decoder_config:
+    latent_dim: 4096
+    use_cache: False
+hparams:
+    learning_rate: 4.e-4
+    temp_loss_weight: 0
+    contrast_loss_weight: 0.25
+    rec_loss_weight: 1
+    teacher_forcing_ratio: 0.5
+    masked_token_prob: 0.15
+    latent_dim: 4096
+
+checkpoint_path: checkpoints/bert-large_qwen2-1.5b_coder10k.pth
 n_eval: 10
 max_seq_len: 48
 # trainer:
 devices: "0," # GPU devices
 mgpu-strategy: "auto" # or "ddp" for distributed training
-use_cache: False
